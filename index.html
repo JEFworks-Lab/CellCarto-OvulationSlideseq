@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CellCarto - Cellular Cartography Spatial Transcriptomics Data Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.min.css" rel="stylesheet">
+</head>
+<body>
+    <div id="container">
+        <div id="left-panel">
+            <img class = "logo" src="logo.svg">
+            <div class="panel-content">
+                <div id="description-section">
+                    <h1>Time-course of ovulating mouse ovaries assayed by Slide-seq</h1>
+                    <div id="description">
+                        <p>
+                            Data from <a href="https://www.pnas.org/doi/10.1073/pnas.2317418121">Mantri et al. 2024</a>. 
+                            See the original publication for more information.
+                        </p>
+                        <br>
+                        <p>
+                            <b><u>Usage:</u></b>
+                            Use the mouse to pan and zoom. 
+                            Hold the Control key to rotate.
+                            Hold the Shift key and hover over points (beads)for more information.
+                            Color by gene or other features. Click the legend to change the color. 
+                            Filter by features. 
+                        </p>
+                        <br>
+                    </div>
+                </div>
+
+                <div id="legend-section">
+                    <h2>Legend</h2>
+                    <div id="legend" class="legend"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="center-panel">
+            <canvas id="scene"></canvas>
+            <div id="loading">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Loading data... This may take a moment.</div>
+            </div>
+        </div>
+
+        <div id="right-panel">
+            <div class="panel-content">
+                <div class="tab-container">
+                    <div class="tab-buttons">
+                        <button class="tab-btn active" data-tab="controls">Controls</button>
+                        <button class="tab-btn" data-tab="genes">Genes</button>
+                    </div>
+                    
+                    <div id="controls-tab" class="tab-content active">
+                        <div class="control-group">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                                <div>
+                                    <label for="coordX">X Coordinate:</label>
+                                    <select id="coordX" style="width: 100%;">
+                                        <option value="">Loading...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="coordY">Y Coordinate:</label>
+                                    <select id="coordY" style="width: 100%;">
+                                        <option value="">Loading...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="coordZ">Z Coordinate:</label>
+                                    <select id="coordZ" style="width: 100%;">
+                                        <option value="none">None</option>
+                                        <option value="">Loading...</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="colorBy">Color By:</label>
+                            <select id="colorBy">
+                            </select>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="geneInput">Gene:</label>
+                            <div class="gene-search-container">
+                                <input type="text" id="geneInput" placeholder="Search gene..." autocomplete="off">
+                                <button id="clearGene" class="clear-gene-btn" style="display: none;">×</button>
+                                <div id="geneSuggestions" class="gene-suggestions"></div>
+                            </div>
+                        </div>
+
+
+                        <div class="control-group">
+                            <label>Filters:</label>
+                            <button id="addFilter">+ Add Filter</button>
+                            <div id="filtersContainer"></div>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="pointSize">Point Size:</label>
+                            <input type="range" id="pointSize" min="0.1" max="15" step="0.1" value="10">
+                            <span id="pointSizeValue">10.0</span>
+                        </div>
+
+                        <div class="control-group">
+                            <label for="sampleRate">Sample Rate (for performance):</label>
+                            <input type="range" id="sampleRate" min="1" max="100" step="1" value="100">
+                            <span id="sampleRateValue">100%</span>
+                        </div>
+
+                        <div class="info">
+                            <p id="pointCount">Loading data...</p>
+                            <p id="visibleCount">Visible points: 0</p>
+                        </div>
+
+                        <div class="control-group">
+                            <button id="resetCamera">Reset Camera</button>
+                        </div>
+                    </div>
+                    
+                    <div id="genes-tab" class="tab-content">
+                        <div id="gene-table"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/",
+            "pako": "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.esm.mjs",
+            "zarrita": "https://cdn.jsdelivr.net/npm/zarrita/+esm",
+            "d3": "https://cdn.jsdelivr.net/npm/d3@7/+esm",
+            "tabulator-tables": "https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator_esm.min.js"
+        }
+    }
+    </script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

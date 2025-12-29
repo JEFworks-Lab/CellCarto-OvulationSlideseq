@@ -1,0 +1,781 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+}
+
+.logo {
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+#container {
+    display: grid;
+    grid-template-columns: 260px 1fr 400px;
+    height: 100vh;
+    width: 100vw;
+    gap: 12px;
+    padding: 12px;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+}
+
+/* Left Panel - Description and Legend */
+#left-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-content {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 24px;
+    height: 100%;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+#description-section {
+    margin-bottom: 16px;
+}
+
+#left-panel h1 {
+    font-size: 1.5em;
+    margin-bottom: 6px;
+    color: #ffffff;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+#description {
+    font-size: 0.9em;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+#description a {
+    color: rgba(150, 150, 150, 0.8);
+}
+
+#description p {
+    margin: 0;
+}
+
+#legend-section h2 {
+    font-size: 0.95em;
+    margin-bottom: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Center Panel - Visualization */
+#center-panel {
+    position: relative;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+#scene {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.2em;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    padding: 32px 48px;
+    border-radius: 12px;
+    z-index: 1000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    min-width: 300px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-text {
+    text-align: center;
+    font-size: 1em;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Right Panel - Controls */
+#right-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#right-panel h2 {
+    font-size: 0.95em;
+    margin-bottom: 20px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Tabs */
+.tab-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.tab-buttons {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 4px;
+    border-radius: 10px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px 16px;
+    margin: 0;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85em;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.tab-btn.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Gene table container */
+#gene-table {
+    height: 100%;
+    min-height: 400px;
+}
+
+/* Tabulator dark theme overrides to match our UI */
+#gene-table .tabulator {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    font-size: 0.85em;
+}
+
+#gene-table .tabulator-header {
+    background: rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#gene-table .tabulator-col {
+    background: transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#gene-table .tabulator-col-title {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+#gene-table .tabulator-row {
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#gene-table .tabulator-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#gene-table .tabulator-row.tabulator-row-even {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+#gene-table .tabulator-row.tabulator-row-even:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#gene-table .tabulator-cell {
+    color: rgba(255, 255, 255, 0.8);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#gene-table .tabulator-footer {
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+#gene-table .tabulator-page {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    border-radius: 4px;
+}
+
+#gene-table .tabulator-page:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+#gene-table .tabulator-page.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.control-group {
+    margin-bottom: 20px;
+    color: rgba(150, 150, 150, 0.8);
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+}
+
+.control-group select,
+.control-group input[type="range"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.control-group select:focus,
+.control-group input[type="range"]:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.control-group select:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.control-group input[type="checkbox"] {
+    margin-right: 8px;
+    accent-color: rgba(255, 255, 255, 0.7);
+}
+
+/* Gene search autocomplete */
+.gene-search-container {
+    position: relative;
+    width: 100%;
+}
+
+.gene-search-container input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    padding-right: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+    /* Match the select dropdown appearance */
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.gene-search-container input[type="text"]:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.gene-search-container input[type="text"]:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.gene-search-container input[type="text"]::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* When gene is selected, show with accent */
+.gene-search-container input[type="text"].has-gene {
+    border-color: rgba(100, 200, 255, 0.4);
+    background: rgba(100, 200, 255, 0.1);
+}
+
+.clear-gene-btn {
+    position: absolute;
+    right: 8px;
+    top: 12px;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.clear-gene-btn:hover {
+    background: rgba(255, 100, 100, 0.6);
+    color: white;
+}
+
+.gene-suggestions {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    background: rgba(30, 32, 38, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.gene-suggestion {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.85);
+    transition: background 0.1s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gene-suggestion:last-child {
+    border-bottom: none;
+}
+
+.gene-suggestion:hover,
+.gene-suggestion.selected {
+    background: rgba(100, 200, 255, 0.15);
+}
+
+.gene-suggestion[data-gene] {
+    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 0.85em;
+    letter-spacing: 0.02em;
+}
+
+/* Filter blocks */
+.filter-block {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(5px);
+}
+
+.filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.filter-header select {
+    flex: 1;
+    margin-right: 8px;
+}
+
+.remove-filter {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin-top: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1.5em;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.remove-filter:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.filter-content {
+    margin-top: 8px;
+}
+
+.filter-checkboxes-container {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    margin-top: 8px;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.filter-buttons button {
+    flex: 1;
+    margin: 0;
+}
+
+.filter-checkboxes {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    margin-top: 8px;
+}
+
+.filter-checkbox-item {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.filter-checkbox-item:last-child {
+    margin-bottom: 0;
+}
+
+.filter-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+.filter-checkbox-item label {
+    margin-bottom: 0;
+    cursor: pointer;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+button:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#addFilter {
+    margin-bottom: 6px;
+}
+
+.select-all-filter,
+.deselect-all-filter {
+    width: 48%;
+    display: inline-block;
+    margin-right: 4%;
+    padding: 8px;
+}
+
+.deselect-all-filter {
+    margin-right: 0;
+}
+
+.info {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info p {
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Time slider styling */
+.time-slider-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.time-slider-wrapper input[type="range"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.time-values {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.time-values span {
+    display: flex;
+    align-items: center;
+}
+
+/* Gene winsorization controls styling */
+.gene-winsorization-group {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.gene-winsorization-title {
+    font-size: 0.95em;
+    margin-bottom: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.reset-gene-range-btn {
+    width: 100%;
+    padding: 10px;
+    margin-top: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.reset-gene-range-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.reset-gene-range-btn:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Legend styling */
+.legend {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    margin-top: 8px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+}
+
+.legend-item:last-child {
+    margin-bottom: 0;
+}
+
+.legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    margin-right: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.legend-label {
+    color: rgba(255, 255, 255, 0.8);
+    word-break: break-word;
+}
+
+.legend-gradient {
+    width: 100%;
+    height: 30px;
+    border-radius: 8px;
+    margin-top: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.legend-gradient-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Range input styling */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.1);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.1);
+}
+
+/* Scrollbar styling */
+.panel-content::-webkit-scrollbar,
+.filter-checkboxes::-webkit-scrollbar,
+.legend::-webkit-scrollbar {
+    width: 8px;
+}
+
+.panel-content::-webkit-scrollbar-track,
+.filter-checkboxes::-webkit-scrollbar-track,
+.legend::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb,
+.filter-checkboxes::-webkit-scrollbar-thumb,
+.legend::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover,
+.filter-checkboxes::-webkit-scrollbar-thumb:hover,
+.legend::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Remove old styles that are no longer needed */
+#selectAll,
+#deselectAll {
+    display: none;
+}
