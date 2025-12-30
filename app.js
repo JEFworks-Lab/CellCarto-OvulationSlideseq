@@ -5,7 +5,7 @@ import * as d3 from 'd3';
 import { TabulatorFull as Tabulator } from 'tabulator-tables';
 
 // Zarr file path
-const ZARR_PATH = 'adata_ovary_combined_fullprocessed_annotated_withglobalspatial.zarr';
+const ZARR_PATH = 'https://raw.githubusercontent.com/JEFworks-Lab/CellCarto-OvulationSlideseq/refs/heads/main/adata_ovary_combined_fullprocessed_annotated_withglobalspatial.zarr';
 
 // Sparse matrix data (loaded once, used for gene lookups)
 let sparseMatrix = {
