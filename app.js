@@ -743,6 +743,21 @@ let zarrRoot = null;
 // Cached zarr arrays for efficient repeated gene loading (CSR format)
 let cachedZarrArrays = null;
 
+// Column metadata (stored without loading data)
+let columnMetadata = {}; // Maps column name to { type: 'categorical'|'continuous', encodingType: string, path: string }
+
+// Track which columns have been loaded
+let loadedColumns = new Set();
+
+// Base URL for zarr store
+let zarrBaseUrl = null;
+
+// Var column metadata (stored without loading data)
+let varColumnMetadata = {}; // Maps column name to { encodingType: string, path: string }
+
+// Track which var columns have been loaded
+let varColumnsLoaded = false;
+
 /**
  * Helper function to decode categorical columns (codes + categories)
  */
@@ -773,6 +788,178 @@ async function loadZarrArray(root, path) {
         console.error(`[loadZarrArray] Error loading ${path}:`, error);
         throw error;
     }
+}
+
+/**
+ * Lazily load an obs column if not already loaded
+ */
+async function ensureColumnLoaded(colName) {
+    if (loadedColumns.has(colName)) {
+        return; // Already loaded
+    }
+    
+    if (!zarrRoot || !columnMetadata[colName]) {
+        console.warn(`[ensureColumnLoaded] Cannot load column ${colName}: metadata not available`);
+        return;
+    }
+    
+    console.log(`[ensureColumnLoaded] Loading column: ${colName}`);
+    const metadata = columnMetadata[colName];
+    const nCells = allData.length;
+    
+    try {
+        let values;
+        const isNumericData = metadata.type === 'continuous';
+        
+        if (metadata.encodingType === 'categorical') {
+            // Categorical column - has codes/categories
+            values = await loadCategoricalColumn(zarrRoot, `obs/${colName}`);
+        } else {
+            // Numeric or string array
+            try {
+                const colData = await loadZarrArray(zarrRoot, `obs/${colName}`);
+                values = Array.from(colData.data);
+            } catch (numError) {
+                // Column has no data chunks (e.g., all zeros were optimized away)
+                console.log(`[ensureColumnLoaded] ${colName} has no data, filling with zeros`);
+                values = new Array(nCells).fill(isNumericData ? 0 : '');
+            }
+        }
+        
+        // Store values in allData
+        if (isNumericData) {
+            // Process as numeric
+            if (!continuousRanges[colName]) {
+                continuousRanges[colName] = { min: Infinity, max: -Infinity };
+            }
+            const range = continuousRanges[colName];
+            
+            for (let i = 0; i < nCells; i++) {
+                const rawVal = values[i];
+                const val = typeof rawVal === 'number' ? rawVal : parseFloat(rawVal);
+                allData[i][colName] = val;
+                if (!isNaN(val)) {
+                    range.min = Math.min(range.min, val);
+                    range.max = Math.max(range.max, val);
+                }
+            }
+            console.log(`[ensureColumnLoaded] Loaded numeric column ${colName}: range [${range.min.toFixed(2)}, ${range.max.toFixed(2)}]`);
+        } else {
+            // Process as categorical
+            if (!attributeValues[colName]) {
+                attributeValues[colName] = new Set();
+            }
+            const attrValues = attributeValues[colName];
+            
+            for (let i = 0; i < nCells; i++) {
+                const val = String(values[i] || '');
+                allData[i][colName] = val;
+                if (val) {
+                    attrValues.add(val);
+                }
+            }
+            console.log(`[ensureColumnLoaded] Loaded categorical column ${colName}: ${attrValues.size} unique values`);
+        }
+        
+        loadedColumns.add(colName);
+    } catch (error) {
+        console.error(`[ensureColumnLoaded] Error loading column ${colName}:`, error);
+        // Fill with defaults
+        for (let i = 0; i < nCells; i++) {
+            allData[i][colName] = isNumericData ? 0 : '';
+        }
+        loadedColumns.add(colName); // Mark as loaded to avoid repeated failures
+    }
+}
+
+/**
+ * Ensure multiple columns are loaded (for filters, legend, etc.)
+ */
+async function ensureColumnsLoaded(colNames) {
+    const toLoad = colNames.filter(col => !loadedColumns.has(col));
+    if (toLoad.length === 0) {
+        return;
+    }
+    
+    console.log(`[ensureColumnsLoaded] Loading ${toLoad.length} columns: ${toLoad.join(', ')}`);
+    
+    // Load columns sequentially to avoid overwhelming the browser
+    for (const colName of toLoad) {
+        await ensureColumnLoaded(colName);
+        // Small delay to allow UI updates
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+}
+
+/**
+ * Load all var columns (lazy loading for gene statistics table)
+ */
+async function ensureVarColumnsLoaded() {
+    if (varColumnsLoaded) {
+        return; // Already loaded
+    }
+    
+    if (!zarrRoot || !sparseMatrix.geneNames || Object.keys(varColumnMetadata).length === 0) {
+        console.warn('[ensureVarColumnsLoaded] Cannot load var columns: metadata not available');
+        return;
+    }
+    
+    console.log('[ensureVarColumnsLoaded] Loading var columns...');
+    const varColumnOrder = Object.keys(varColumnMetadata);
+    const nGenes = sparseMatrix.geneNames.length;
+    
+    const varColumnData = {};
+    const varColumnTypes = {};
+    
+    for (const colName of varColumnOrder) {
+        try {
+            const metadata = varColumnMetadata[colName];
+            const isCategorical = metadata.encodingType === 'categorical';
+            
+            if (isCategorical) {
+                // Load categorical column
+                const catData = await loadCategoricalColumn(zarrRoot, `var/${colName}`);
+                varColumnData[colName] = catData;
+                varColumnTypes[colName] = 'categorical';
+            } else {
+                // Load numeric column
+                const colData = await loadZarrArray(zarrRoot, `var/${colName}`);
+                varColumnData[colName] = Array.from(colData.data);
+                varColumnTypes[colName] = 'numeric';
+            }
+        } catch (colError) {
+            console.warn(`[ensureVarColumnsLoaded] Could not load var column ${colName}:`, colError);
+        }
+    }
+    
+    // Build gene stats array with all var columns
+    // Normalize field names by replacing dots with underscores (Tabulator interprets dots as nested paths)
+    geneStats = sparseMatrix.geneNames.map((name, i) => {
+        const stats = { gene: name };
+        // Add all var columns, normalizing field names
+        for (const colName of varColumnOrder) {
+            // Replace dots with underscores in field names to avoid Tabulator nested path issues
+            const normalizedFieldName = colName.replace(/\./g, '_');
+            if (varColumnData[colName] && varColumnData[colName][i] !== undefined) {
+                stats[normalizedFieldName] = varColumnData[colName][i];
+            } else {
+                stats[normalizedFieldName] = null;
+            }
+        }
+        return stats;
+    });
+    
+    // Store mapping from normalized names to original names for display
+    const fieldNameMapping = {};
+    for (const colName of varColumnOrder) {
+        const normalized = colName.replace(/\./g, '_');
+        fieldNameMapping[normalized] = colName;
+    }
+    // Store mapping globally for use in table initialization
+    window.varFieldNameMapping = fieldNameMapping;
+    
+    varColumnsLoaded = true;
+    console.log(`[ensureVarColumnsLoaded] Loaded statistics for ${geneStats.length} genes with ${varColumnOrder.length} columns`);
 }
 
 /**
@@ -1177,6 +1364,7 @@ async function loadData() {
         // Open zarr store - use full URL
         console.log(`[loadData] Opening zarr store: ${ZARR_PATH}`);
         const baseUrl = new URL(ZARR_PATH, window.location.href).href;
+        zarrBaseUrl = baseUrl; // Save for lazy loading
         const store = new zarr.FetchStore(baseUrl);
         const root = zarr.root(store);
         zarrRoot = root; // Save for loading genes later
@@ -1204,109 +1392,67 @@ async function loadData() {
             allData[i] = { barcode: cellBarcodes[i] };
         }
         
-        // Discover and load all obs columns
-        // Read .zattrs to get column names
+        // Discover obs columns metadata (but don't load data - lazy load on demand)
+        loadingText.textContent = 'Discovering column metadata...';
         const attrsResponse = await fetch(`${baseUrl}/obs/.zattrs`);
         const obsAttrs = await attrsResponse.json();
         const columnOrder = obsAttrs['column-order'] || [];
         
-        console.log(`[loadData] Found obs columns:`, columnOrder);
+        console.log(`[loadData] Found ${columnOrder.length} obs columns (metadata only, data will be loaded on demand)`);
         
-        // Determine column types and load data
+        // Determine column types from metadata (don't load actual data)
         const numericColumns = new Set(['global_x', 'global_y', 'global_z']);
         
+        // Initialize metadata tracking
+        columnMetadata = {};
+        column_names_categorical = [];
+        column_names_continuous = [];
+        loadedColumns.clear();
+        
         for (const colName of columnOrder) {
-            loadingText.textContent = `Loading column: ${colName}...`;
-            
             try {
-                let values;
-                let isNumericData = false;
-                
-                // First, check the column's encoding type from .zattrs
+                // Check the column's encoding type from .zattrs
                 let encodingType = null;
                 try {
-                    const attrsResponse = await fetch(`${baseUrl}/obs/${colName}/.zattrs`);
-                    if (attrsResponse.ok) {
-                        const attrs = await attrsResponse.json();
-                        encodingType = attrs['encoding-type'];
+                    const colAttrsResponse = await fetch(`${baseUrl}/obs/${colName}/.zattrs`);
+                    if (colAttrsResponse.ok) {
+                        const colAttrs = await colAttrsResponse.json();
+                        encodingType = colAttrs['encoding-type'];
                     }
                 } catch (e) {
-                    // Ignore - will try to detect from data
+                    // Ignore - will default to array
                 }
                 
-                // Load based on encoding type
-                if (encodingType === 'categorical') {
-                    // Categorical column - has codes/categories
-                    values = await loadCategoricalColumn(root, `obs/${colName}`);
-                    console.log(`[loadData] Loaded categorical column: ${colName}`);
-                } else if (encodingType === 'array' || numericColumns.has(colName)) {
-                    // Numeric array - try to load, fill with zeros if fails
-                    try {
-                        const colData = await loadZarrArray(root, `obs/${colName}`);
-                        values = Array.from(colData.data);
-                        isNumericData = true;
-                        console.log(`[loadData] Loaded numeric column: ${colName}`);
-                    } catch (numError) {
-                        // Column has no data chunks (e.g., all zeros were optimized away)
-                        // Fill with the fill_value (default 0)
-                        console.log(`[loadData] ${colName} has no data, filling with zeros`);
-                        values = new Array(nCells).fill(0);
-                        isNumericData = true;
-                    }
-                } else {
-                    // String array or unknown - load as direct array
-                    try {
-                        const colData = await loadZarrArray(root, `obs/${colName}`);
-                        values = Array.from(colData.data);
-                        isNumericData = values.length > 0 && typeof values[0] === 'number';
-                        console.log(`[loadData] Loaded ${encodingType || 'direct'} column: ${colName}`);
-                    } catch (arrError) {
-                        console.warn(`[loadData] Could not load ${colName}:`, arrError);
-                        continue;
-                    }
-                }
+                // Determine if it's numeric based on encoding type or known numeric columns
+                const isNumeric = encodingType === 'array' || numericColumns.has(colName);
                 
-                // Process based on data type
-                if (isNumericData || numericColumns.has(colName)) {
-                    // Track as continuous
+                // Store metadata
+                columnMetadata[colName] = {
+                    type: isNumeric ? 'continuous' : 'categorical',
+                    encodingType: encodingType || 'array',
+                    path: colName
+                };
+                
+                // Track column names by type (for UI)
+                if (isNumeric) {
                     if (!column_names_continuous.includes(colName)) {
                         column_names_continuous.push(colName);
                     }
+                    // Initialize range (will be computed when loaded)
                     continuousRanges[colName] = { min: Infinity, max: -Infinity };
-                    
-                    for (let i = 0; i < nCells; i++) {
-                        const rawVal = values[i];
-                        const val = typeof rawVal === 'number' ? rawVal : parseFloat(rawVal);
-                        allData[i][colName] = val;
-                        if (!isNaN(val)) {
-                            continuousRanges[colName].min = Math.min(continuousRanges[colName].min, val);
-                            continuousRanges[colName].max = Math.max(continuousRanges[colName].max, val);
-                        }
-                    }
-                    console.log(`[loadData] Processed ${colName} as numeric: range [${continuousRanges[colName].min.toFixed(2)}, ${continuousRanges[colName].max.toFixed(2)}]`);
                 } else {
-                    // Track as categorical
                     if (!column_names_categorical.includes(colName)) {
                         column_names_categorical.push(colName);
                     }
+                    // Initialize attribute values set (will be populated when loaded)
                     attributeValues[colName] = new Set();
-                    
-                    for (let i = 0; i < nCells; i++) {
-                        const val = String(values[i] || '');
-                        allData[i][colName] = val;
-                        if (val) {
-                            attributeValues[colName].add(val);
-                        }
-                    }
-                    console.log(`[loadData] Processed ${colName} as categorical: ${attributeValues[colName].size} unique values`);
                 }
             } catch (colError) {
-                console.warn(`[loadData] Could not load column ${colName}:`, colError);
+                console.warn(`[loadData] Could not get metadata for column ${colName}:`, colError);
             }
-            
-            // Yield to browser
-            await new Promise(resolve => setTimeout(resolve, 0));
         }
+        
+        console.log(`[loadData] Discovered ${column_names_categorical.length} categorical and ${column_names_continuous.length} continuous columns`);
         
         // Discover available coordinate sources
         loadingText.textContent = 'Discovering coordinate sources...';
@@ -1402,82 +1548,49 @@ async function loadData() {
                 sparseMatrix.geneNames = [];
             }
             
-            // Load gene statistics from var table
-            loadingText.textContent = 'Loading gene statistics from var/...';
+            // Discover var column metadata (but don't load data - lazy load when Genes tab is opened)
+            loadingText.textContent = 'Discovering var column metadata...';
             try {
                 // Get var column order from .zattrs
                 const varAttrsResponse = await fetch(`${baseUrl}/var/.zattrs`);
                 const varAttrs = await varAttrsResponse.json();
                 const varColumnOrder = varAttrs['column-order'] || [];
                 
-                console.log(`[loadData] Found ${varColumnOrder.length} var columns:`, varColumnOrder);
+                console.log(`[loadData] Found ${varColumnOrder.length} var columns (metadata only, data will be loaded on demand)`);
                 
-                // Load all var columns
-                const varColumnData = {};
-                const varColumnTypes = {}; // Track which columns are categorical
+                // Initialize metadata tracking
+                varColumnMetadata = {};
                 
                 for (const colName of varColumnOrder) {
                     try {
-                        loadingText.textContent = `Loading var column: ${colName}...`;
-                        
-                        // Check if it's a categorical column
-                        let isCategorical = false;
+                        // Check encoding type from .zattrs
+                        let encodingType = null;
                         try {
                             const colAttrsResponse = await fetch(`${baseUrl}/var/${colName}/.zattrs`);
                             if (colAttrsResponse.ok) {
                                 const colAttrs = await colAttrsResponse.json();
-                                isCategorical = colAttrs['encoding-type'] === 'categorical';
+                                encodingType = colAttrs['encoding-type'];
                             }
                         } catch (e) {
-                            // Not categorical, or can't determine
+                            // Not categorical, or can't determine - default to array
                         }
                         
-                        if (isCategorical) {
-                            // Load categorical column
-                            const catData = await loadCategoricalColumn(root, `var/${colName}`);
-                            varColumnData[colName] = catData;
-                            varColumnTypes[colName] = 'categorical';
-                        } else {
-                            // Load numeric column
-                            const colData = await loadZarrArray(root, `var/${colName}`);
-                            varColumnData[colName] = Array.from(colData.data);
-                            varColumnTypes[colName] = 'numeric';
-                        }
+                        // Store metadata
+                        varColumnMetadata[colName] = {
+                            encodingType: encodingType || 'array',
+                            path: colName
+                        };
                     } catch (colError) {
-                        console.warn(`[loadData] Could not load var column ${colName}:`, colError);
-                        // Continue with other columns
+                        console.warn(`[loadData] Could not get metadata for var column ${colName}:`, colError);
                     }
                 }
                 
-                // Build gene stats array with all var columns
-                // Normalize field names by replacing dots with underscores (Tabulator interprets dots as nested paths)
-                geneStats = sparseMatrix.geneNames.map((name, i) => {
-                    const stats = { gene: name };
-                    // Add all var columns, normalizing field names
-                    for (const colName of varColumnOrder) {
-                        // Replace dots with underscores in field names to avoid Tabulator nested path issues
-                        const normalizedFieldName = colName.replace(/\./g, '_');
-                        if (varColumnData[colName] && varColumnData[colName][i] !== undefined) {
-                            stats[normalizedFieldName] = varColumnData[colName][i];
-                        } else {
-                            stats[normalizedFieldName] = null;
-                        }
-                    }
-                    return stats;
-                });
+                // Initialize geneStats with just gene names (columns will be loaded later)
+                geneStats = sparseMatrix.geneNames.map(name => ({ gene: name }));
                 
-                // Store mapping from normalized names to original names for display
-                const fieldNameMapping = {};
-                for (const colName of varColumnOrder) {
-                    const normalized = colName.replace(/\./g, '_');
-                    fieldNameMapping[normalized] = colName;
-                }
-                // Store mapping globally for use in table initialization
-                window.varFieldNameMapping = fieldNameMapping;
-                
-                console.log(`[loadData] Loaded statistics for ${geneStats.length} genes with ${varColumnOrder.length} columns`);
+                console.log(`[loadData] Discovered ${Object.keys(varColumnMetadata).length} var columns (not loaded)`);
             } catch (statsError) {
-                console.warn('[loadData] Could not load gene statistics:', statsError);
+                console.warn('[loadData] Could not discover var column metadata:', statsError);
                 geneStats = sparseMatrix.geneNames.map(name => ({ gene: name }));
             }
         } catch (sparseError) {
@@ -1651,7 +1764,7 @@ function setupGeneAutocomplete(geneNames) {
     selectGeneGlobal = selectGene;
     
     // Clear gene selection
-    function clearGene() {
+    async function clearGene() {
         selectedGene = null;
         geneInput.value = '';
         geneInput.classList.remove('has-gene');
@@ -1677,7 +1790,7 @@ function setupGeneAutocomplete(geneNames) {
         console.log('[Gene] Cleared gene selection');
         
         // Trigger re-render with obs coloring
-        createPointCloud();
+        await createPointCloud();
     }
     
     // Input event handler
@@ -1945,7 +2058,7 @@ async function randomizeCategoricalColors(attribute, values) {
 }
 
 // Update the color legend
-function updateLegend() {
+async function updateLegend() {
     const legendDiv = document.getElementById('legend');
     if (!legendDiv) return;
     
@@ -1954,6 +2067,11 @@ function updateLegend() {
     // Determine what we're coloring by: check if Color By is set to "Gene"
     const isGene = colorByDropdown === 'Gene' && selectedGene !== null;
     const colorBy = isGene ? `gene:${selectedGene}` : colorByDropdown;
+    
+    // Ensure the column is loaded if it's not a gene
+    if (!isGene && colorByDropdown && colorByDropdown !== 'Gene') {
+        await ensureColumnLoaded(colorByDropdown);
+    }
     
     // Get unique values from visible data
     const visibleValues = new Set();
@@ -2201,6 +2319,11 @@ async function createPointCloud() {
     const colorByGene = colorBy === 'Gene' && selectedGene !== null;
     const effectiveColorBy = colorByGene ? `gene:${selectedGene}` : colorBy;
     
+    // Ensure the column is loaded if it's not a gene
+    if (!colorByGene && colorBy && colorBy !== 'Gene') {
+        await ensureColumnLoaded(colorBy);
+    }
+    
     // Handle gene expression coloring
     let geneExpression = null;
     if (colorByGene) {
@@ -2370,8 +2493,20 @@ function createFilterElement(filterId, attribute) {
     if (column_names_continuous.includes(attribute)) {
         // Continuous filter with sliders
         const range = continuousRanges[attribute];
-        if (!range) {
-            filterDiv.innerHTML = `<div class="filter-label">No range data for ${attribute}</div>`;
+        if (!range || range.min === Infinity || range.max === -Infinity) {
+            // Range not loaded yet, show placeholder
+            filterDiv.innerHTML = `
+            <div class="filter-header">
+                <select class="filter-attribute" data-filter-id="${filterId}">
+                    <option value="">Select attribute...</option>
+                    ${availableOptions}
+                </select>
+                <button class="remove-filter" data-filter-id="${filterId}">×</button>
+            </div>
+            <div class="filter-content" data-filter-id="${filterId}">
+                <p style="color: #95a5a6; font-size: 0.85em;">Loading range data...</p>
+            </div>
+            `;
             return filterDiv;
         }
         
@@ -2487,19 +2622,23 @@ function attachFilterEventListeners() {
         const newSelect = select.cloneNode(true);
         select.parentNode.replaceChild(newSelect, select);
         
-        newSelect.addEventListener('change', (e) => {
+        newSelect.addEventListener('change', async (e) => {
             const filterId = e.target.dataset.filterId;
             const attribute = e.target.value;
             
             const filter = activeFilters.find(f => f.id === filterId);
-            if (filter) {
+            if (filter && attribute) {
                 filter.attribute = attribute;
+                
+                // Ensure the column is loaded
+                await ensureColumnLoaded(attribute);
+                
                 if (column_names_continuous.includes(attribute)) {
                     filter.type = 'continuous';
                     const range = continuousRanges[attribute];
                     filter.range = range ? { min: range.min, max: range.max } : { min: 0, max: 1 };
                     filter.values = null;
-                } else if (attribute && column_names_categorical.includes(attribute)) {
+                } else if (column_names_categorical.includes(attribute)) {
                     filter.type = 'categorical';
                     const values = Array.from(attributeValues[attribute] || []);
                     filter.values = new Set(values);
@@ -2670,11 +2809,17 @@ async function updateFilter() {
         candidateIndices.push(i);
     }
     
+    // Ensure all filter columns are loaded
+    const filterColumns = activeFilters
+        .filter(f => f.attribute && f.type)
+        .map(f => f.attribute);
+    await ensureColumnsLoaded(filterColumns);
+    
     // Apply each filter sequentially (AND logic)
-    activeFilters.forEach((filter, index) => {
+    for (const filter of activeFilters) {
         if (!filter.attribute || !filter.type) {
-            console.log(`[Filter] Skipping filter ${index + 1} (no attribute or type)`);
-            return;
+            console.log(`[Filter] Skipping filter (no attribute or type)`);
+            continue;
         }
         
         const filteredIndices = [];
@@ -2704,12 +2849,12 @@ async function updateFilter() {
             console.log(`[Filter] Applied categorical filter on ${filter.attribute}: ${beforeCount} -> ${filteredIndices.length} points`);
         } else {
             // Invalid filter, skip it (don't filter anything)
-            console.log(`[Filter] Skipping invalid filter ${index + 1} on ${filter.attribute}`);
-            return;
+            console.log(`[Filter] Skipping invalid filter on ${filter.attribute}`);
+            continue;
         }
         
         candidateIndices = filteredIndices;
-    });
+    }
     
     // Convert to Uint32Array
     visibleIndices = new Uint32Array(candidateIndices);
@@ -2726,7 +2871,7 @@ function setupTabs() {
     const tabContents = document.querySelectorAll('.tab-content');
     
     tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const tabId = btn.dataset.tab;
             
             // Update button states
@@ -2742,7 +2887,16 @@ function setupTabs() {
             });
             
             // Initialize gene table when first switching to genes tab
-            if (tabId === 'genes' && !geneTable && geneStats.length > 0) {
+            if (tabId === 'genes' && !geneTable && sparseMatrix.geneNames && sparseMatrix.geneNames.length > 0) {
+                // Load var columns if not already loaded
+                if (!varColumnsLoaded) {
+                    const loadingEl = document.getElementById('loading');
+                    const loadingText = loadingEl.querySelector('.loading-text');
+                    loadingEl.style.display = 'flex';
+                    loadingText.textContent = 'Loading gene statistics...';
+                    await ensureVarColumnsLoaded();
+                    loadingEl.style.display = 'none';
+                }
                 initGeneTable();
             }
         });
