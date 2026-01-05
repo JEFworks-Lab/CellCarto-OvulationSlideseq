@@ -113,6 +113,14 @@ function initScene() {
     const panSpeed = 0.1; // Pan speed multiplier (increased for better responsiveness)
     const rotationSpeed = 0.01; // Rotation speed (increased for better responsiveness)
     
+    // Touch state for pinch-to-zoom
+    let touchState = {
+        isPinching: false,
+        initialDistance: 0,
+        initialZoom: 0,
+        touches: []
+    };
+    
     // Listen for Control key
     window.addEventListener('keydown', (event) => {
         if (event.key === 'Control' || event.ctrlKey) {
@@ -198,7 +206,14 @@ function initScene() {
         }
     }, { capture: false, passive: false });
     
-    // Also handle touch events for Mac trackpads
+    // Calculate distance between two touches
+    function getTouchDistance(touch1, touch2) {
+        const dx = touch1.clientX - touch2.clientX;
+        const dy = touch1.clientY - touch2.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    // Handle touch events for touchscreens (iPad, etc.)
     canvasElement.addEventListener('touchstart', (event) => {
         console.log('[Camera Controls] touchstart event:', {
             touches: event.touches.length,
@@ -207,13 +222,29 @@ function initScene() {
             isControlPressed: isControlPressed
         });
         
-        if (event.touches.length === 1) { // Single finger touch
+        if (event.touches.length === 1) {
+            // Single finger touch - pan or rotate
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
             isDragging = true;
+            touchState.isPinching = false;
             lastMousePosition.set(event.touches[0].clientX, event.touches[0].clientY);
             console.log('[Camera Controls] Touch dragging started, mode:', isControlPressed ? 'ROTATE' : 'PAN');
+        } else if (event.touches.length === 2) {
+            // Two finger touch - pinch to zoom
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            isDragging = false;
+            touchState.isPinching = true;
+            touchState.initialDistance = getTouchDistance(event.touches[0], event.touches[1]);
+            touchState.initialZoom = camera.position.distanceTo(controls.target);
+            touchState.touches = [
+                { x: event.touches[0].clientX, y: event.touches[0].clientY },
+                { x: event.touches[1].clientX, y: event.touches[1].clientY }
+            ];
+            console.log('[Camera Controls] Pinch-to-zoom started, initial distance:', touchState.initialDistance.toFixed(2));
         }
     }, { capture: true, passive: false });
     
@@ -301,7 +332,8 @@ function initScene() {
                 
                 if (Math.abs(deltaX) > 0) {
                     // Pan in x direction (world space)
-                    const xPanAmount = deltaX * scaledPanSpeed;
+                    // Invert deltaX so dragging right moves camera right (intuitive)
+                    const xPanAmount = -deltaX * scaledPanSpeed;
                     console.log('[Camera Controls] Panning in X direction:', xPanAmount.toFixed(4));
                     const xPanVector = new THREE.Vector3(xPanAmount, 0, 0);
                     controls.target.add(xPanVector);
@@ -337,9 +369,39 @@ function initScene() {
         }
     }, { capture: false, passive: true });
     
-    // Handle touchmove for Mac trackpads
+    // Handle touchmove for touchscreens
     canvasElement.addEventListener('touchmove', (event) => {
-        if (isDragging && event.touches.length === 1) {
+        if (touchState.isPinching && event.touches.length === 2) {
+            // Pinch-to-zoom
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            
+            const currentDistance = getTouchDistance(event.touches[0], event.touches[1]);
+            const scale = currentDistance / touchState.initialDistance;
+            
+            // Calculate new zoom distance
+            const newZoom = touchState.initialZoom / scale;
+            const minZoom = 1;
+            const maxZoom = 100000;
+            const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
+            
+            // Adjust camera position to maintain target
+            const offset = new THREE.Vector3();
+            offset.subVectors(camera.position, controls.target);
+            offset.normalize();
+            offset.multiplyScalar(clampedZoom);
+            camera.position.copy(controls.target).add(offset);
+            
+            controls.update();
+            camera.updateMatrixWorld();
+            
+            console.log('[Camera Controls] Pinch zoom:', {
+                scale: scale.toFixed(3),
+                distance: clampedZoom.toFixed(2)
+            });
+        } else if (isDragging && event.touches.length === 1) {
+            // Single finger drag - pan or rotate
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
@@ -390,7 +452,8 @@ function initScene() {
                 }
                 
                 if (Math.abs(deltaX) > 0) {
-                    const xPanAmount = deltaX * scaledPanSpeed;
+                    // Invert deltaX so dragging right moves camera right (intuitive)
+                    const xPanAmount = -deltaX * scaledPanSpeed;
                     const xPanVector = new THREE.Vector3(xPanAmount, 0, 0);
                     controls.target.add(xPanVector);
                     camera.position.add(xPanVector);
@@ -437,14 +500,37 @@ function initScene() {
         }
     }, { capture: false, passive: true });
     
-    // Handle touchend for Mac trackpads
+    // Handle touchend for touchscreens
     canvasElement.addEventListener('touchend', (event) => {
-        console.log('[Camera Controls] touchend event');
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
+        console.log('[Camera Controls] touchend event, remaining touches:', event.touches.length);
+        
+        if (event.touches.length === 0) {
+            // All touches ended
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            isDragging = false;
+            touchState.isPinching = false;
+            touchState.touches = [];
+            console.log('[Camera Controls] All touches ended');
+        } else if (event.touches.length === 1 && touchState.isPinching) {
+            // Pinch ended, switch to single touch
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            touchState.isPinching = false;
+            isDragging = true;
+            lastMousePosition.set(event.touches[0].clientX, event.touches[0].clientY);
+            console.log('[Camera Controls] Pinch ended, switching to single touch drag');
+        }
+    }, { capture: true, passive: false });
+    
+    // Handle touchcancel
+    canvasElement.addEventListener('touchcancel', (event) => {
+        console.log('[Camera Controls] touchcancel event');
         isDragging = false;
-        console.log('[Camera Controls] Touch dragging stopped');
+        touchState.isPinching = false;
+        touchState.touches = [];
     }, { capture: true, passive: false });
     
     // Handle pointer cancel (Mac trackpads sometimes send this)
